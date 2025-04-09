@@ -1,0 +1,63 @@
+name: Windows Environment Setup
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  setup-windows:
+    runs-on: windows-latest  # Usa o ambiente Windows fornecido pelo GitHub
+    
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v3
+        
+      - name: Informações do Sistema
+        run: |
+          echo "Sistema operacional: Windows"
+          systeminfo | findstr /B /C:"OS Name" /C:"OS Version"
+          echo "Diretório atual: $PWD"
+          
+      - name: Instalar software necessário
+        run: |
+          # Instalar o Chocolatey (gerenciador de pacotes para Windows)
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          
+          # Instalar alguns pacotes úteis usando o Chocolatey
+          choco install python3 -y
+          choco install git -y
+          choco install vscode -y
+          
+      - name: Configurar acesso remoto
+        env:
+          REMOTE_ACCESS_TOKEN: ${{ secrets.REMOTE_ACCESS_TOKEN }}
+        run: |
+          # Verificar se o token de acesso foi fornecido
+          if (-not [string]::IsNullOrEmpty($env:REMOTE_ACCESS_TOKEN)) {
+            # Instalar Chrome Remote Desktop
+            choco install chrome-remote-desktop -y
+            
+            # Configurar o acesso remoto (usando o token fornecido nos secrets)
+            # Nota: Este é um exemplo e pode precisar de ajustes para funcionar corretamente
+            $remoteDesktopPath = "C:\Program Files\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
+            if (Test-Path $remoteDesktopPath) {
+              Start-Process -FilePath $remoteDesktopPath -ArgumentList "--code=`"$env:REMOTE_ACCESS_TOKEN`"", '--redirect-url="https://remotedesktop.google.com/_/oauthredirect"', '--name="GitHub Actions Windows"'
+              echo "Chrome Remote Desktop configurado"
+            } else {
+              echo "Chrome Remote Desktop não encontrado no caminho esperado"
+            }
+          } else {
+            echo "Token de acesso remoto não fornecido, pulando configuração"
+          }
+          
+      - name: Manter o ambiente ativo
+        run: |
+          echo "Mantendo o ambiente Windows ativo por 30 minutos..."
+          $endTime = (Get-Date).AddMinutes(30)
+          while ((Get-Date) -lt $endTime) {
+            echo "Ambiente Windows ativo em: $(Get-Date)"
+            Start-Sleep -Seconds 60
+          }
