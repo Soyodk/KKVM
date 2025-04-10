@@ -35,139 +35,171 @@ jobs:
 
           echo "Instalando Chrome Remote Desktop..."
           Start-Process msiexec.exe -Wait -ArgumentList "/i `"$downloadPath`" /qn INSTALLLOCATION=`"C:\Remote-desktop\Configuracao\Home`""
+          Start-Sleep -Seconds 30  # Aguardar a instalação ser concluída
 
-      - name: Esperar e tentar novamente se o token estiver ausente
+      - name: Copiar arquivos necessários para a pasta personalizada
+        run: |
+          echo "Copiando arquivos do Chrome Remote Desktop para pasta personalizada..."
+          $sourcePaths = @(
+            "C:\Program Files\Google\Chrome Remote Desktop\",
+            "C:\Program Files (x86)\Google\Chrome Remote Desktop\"
+          )
+          
+          foreach ($sourcePath in $sourcePaths) {
+            if (Test-Path $sourcePath) {
+              echo "Copiando de: $sourcePath"
+              Copy-Item -Path "$sourcePath\*" -Destination "C:\Remote-desktop\Configuracao\Home\" -Recurse -Force -ErrorAction SilentlyContinue
+            }
+          }
+          
+          # Localizar o executável principal e copiá-lo se ainda não estiver na pasta
+          $remotingExePath = Get-ChildItem -Path "C:\" -Recurse -Filter "remoting_start_host.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          if ($remotingExePath -and -not (Test-Path "C:\Remote-desktop\Configuracao\Home\remoting_start_host.exe")) {
+            echo "Copiando executável principal de: $remotingExePath"
+            Copy-Item -Path $remotingExePath -Destination "C:\Remote-desktop\Configuracao\Home\" -Force
+          }
+
+      - name: Tentar obter e usar token persistentemente
         env:
           REMOTE_ACCESS_TOKEN: ${{ secrets.REMOTE_ACCESS_TOKEN }}
         run: |
-          $maxAttempts = 10
-          $attempt = 0
-          $tokenObtained = $false
-
-          while (-not $tokenObtained -and $attempt -lt $maxAttempts) {
-            $attempt++
-            echo "Tentativa $attempt de $maxAttempts para obter o token REMOTE_ACCESS_TOKEN..."
+          $totalMaxAttempts = 20  # Número total máximo de tentativas
+          $attemptCount = 0
+          $configSuccess = $false
+          
+          while (-not $configSuccess -and $attemptCount -lt $totalMaxAttempts) {
+            $attemptCount++
+            echo "Tentativa $attemptCount de $totalMaxAttempts para configurar acesso remoto..."
             
-            if (-not [string]::IsNullOrEmpty($env:REMOTE_ACCESS_TOKEN)) {
-              echo "Token obtido com sucesso!"
-              $tokenObtained = $true
-            } else {
-              echo "Token não disponível. Aguardando 60 segundos antes da próxima tentativa..."
-              Start-Sleep -Seconds 60
+            # Verificar se o token está disponível
+            if ([string]::IsNullOrEmpty($env:REMOTE_ACCESS_TOKEN)) {
+              echo "Token não disponível. Tentando atualizar..."
               $env:REMOTE_ACCESS_TOKEN = "${{ secrets.REMOTE_ACCESS_TOKEN }}"
-            }
-          }
-
-          if (-not $tokenObtained) {
-            echo "AVISO: Token não encontrado após $maxAttempts tentativas. Continuando mesmo assim..."
-          }
-
-      - name: Procurar e executar todos os EXEs na pasta de instalação
-        run: |
-          echo "Procurando executáveis na pasta de instalação..."
-          $installPath = "C:\Remote-desktop\Configuracao\Home"
-          
-          # Primeiro, tentar encontrar o arquivo remoting_start_host.exe
-          $remotingExe = Get-ChildItem -Path "C:\Program Files" -Recurse -Filter "remoting_start_host.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          
-          if ($remotingExe) {
-            echo "Encontrado executável principal em: $($remotingExe.FullName)"
-            Copy-Item -Path $remotingExe.FullName -Destination "$installPath\" -Force
-          } else {
-            echo "Executável principal não encontrado nas pastas padrão do sistema."
-          }
-          
-          # Procurar e executar todos os EXEs na pasta de instalação
-          $exeFiles = Get-ChildItem -Path $installPath -Recurse -Filter "*.exe"
-          
-          if ($exeFiles.Count -eq 0) {
-            echo "Nenhum arquivo EXE encontrado na pasta de instalação. Tentando alternativas..."
-            
-            # Copiar outros executáveis possíveis do Chrome Remote Desktop
-            $chromerdFiles = Get-ChildItem -Path "C:\Program Files\Google\Chrome Remote Desktop\" -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue
-            foreach ($file in $chromerdFiles) {
-              echo "Copiando $($file.Name) para pasta personalizada..."
-              Copy-Item -Path $file.FullName -Destination "$installPath\" -Force
+              Start-Sleep -Seconds 30
+            } else {
+              echo "Token disponível! Prosseguindo com configuração..."
             }
             
-            # Verificar novamente
-            $exeFiles = Get-ChildItem -Path $installPath -Recurse -Filter "*.exe"
-          }
-          
-          foreach ($exe in $exeFiles) {
-            echo "Executando: $($exe.FullName)"
-            Start-Process -FilePath $exe.FullName -ArgumentList "--headless" -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 2
-          }
-
-      - name: Configurar acesso remoto (tentativas múltiplas)
-        env:
-          REMOTE_ACCESS_TOKEN: ${{ secrets.REMOTE_ACCESS_TOKEN }}
-        run: |
-          $maxAttempts = 5
-          $attempt = 0
-          $success = $false
-          
-          while (-not $success -and $attempt -lt $maxAttempts) {
-            $attempt++
-            echo "Tentativa $attempt de $maxAttempts para configurar o acesso remoto..."
+            # Localizar o executável de configuração (com limite de tempo para evitar busca infinita)
+            $timeoutSeconds = 60
+            $startTime = Get-Date
+            $remotingExePath = $null
             
-            # Procurar o executável em vários locais possíveis
-            $possiblePaths = @(
+            # Lugares específicos para verificar primeiro
+            $specificPaths = @(
               "C:\Remote-desktop\Configuracao\Home\remoting_start_host.exe",
               "C:\Program Files\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe",
               "C:\Program Files (x86)\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
             )
             
-            $remotePath = $null
-            foreach ($path in $possiblePaths) {
+            foreach ($path in $specificPaths) {
               if (Test-Path $path) {
-                $remotePath = $path
-                echo "Encontrado executável em: $remotePath"
+                $remotingExePath = $path
+                echo "Encontrado executável em caminho específico: $remotingExePath"
                 break
               }
             }
             
-            if (-not $remotePath) {
-              # Procura recursiva como último recurso
-              $foundExe = Get-ChildItem -Path "C:\" -Recurse -Filter "remoting_start_host.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-              if ($foundExe) {
-                $remotePath = $foundExe.FullName
-                echo "Encontrado executável com busca recursiva: $remotePath"
+            # Se não encontrado em caminhos específicos, fazer busca limitada
+            if (-not $remotingExePath) {
+              echo "Procurando o executável em locais comuns (com timeout de $timeoutSeconds segundos)..."
+              $searchLocations = @(
+                "C:\Program Files",
+                "C:\Program Files (x86)",
+                "C:\Remote-desktop"
+              )
+              
+              foreach ($location in $searchLocations) {
+                if ((Get-Date) -gt $startTime.AddSeconds($timeoutSeconds)) {
+                  echo "Timeout atingido na busca do executável!"
+                  break
+                }
+                
+                if (Test-Path $location) {
+                  $foundFile = Get-ChildItem -Path $location -Recurse -Filter "remoting_start_host.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+                  if ($foundFile) {
+                    $remotingExePath = $foundFile.FullName
+                    echo "Encontrado executável em: $remotingExePath"
+                    break
+                  }
+                }
               }
             }
             
-            if ($remotePath) {
+            # Tentar configurar se o executável foi encontrado
+            if ($remotingExePath) {
+              echo "Tentando configurar com o executável: $remotingExePath"
+              
               try {
-                echo "Configurando com token..."
                 if (-not [string]::IsNullOrEmpty($env:REMOTE_ACCESS_TOKEN)) {
-                  Start-Process -FilePath $remotePath -ArgumentList "--code=`"$env:REMOTE_ACCESS_TOKEN`"", '--redirect-url="https://remotedesktop.google.com/_/oauthredirect"', '--name="Windows Remote Access"' -Wait
-                  echo "Configuração concluída."
-                  $success = $true
+                  echo "Executando com token: $remotingExePath"
+                  $process = Start-Process -FilePath $remotingExePath -ArgumentList "--code=`"$env:REMOTE_ACCESS_TOKEN`"", '--redirect-url="https://remotedesktop.google.com/_/oauthredirect"', '--name="Windows Remote Access"' -PassThru -Wait -ErrorAction Stop
+                  if ($process.ExitCode -eq 0) {
+                    echo "Configuração bem-sucedida!"
+                    $configSuccess = $true
+                  } else {
+                    echo "Processo executado, mas retornou código de saída: $($process.ExitCode)"
+                  }
                 } else {
-                  echo "Token não disponível. Tentando continuar mesmo assim..."
-                  Start-Process -FilePath $remotePath -ArgumentList '--name="Windows Remote Access"' -Wait
+                  echo "Token ainda indisponível, tentando executar sem token..."
+                  Start-Process -FilePath $remotingExePath -ArgumentList '--name="Windows Remote Access"' -Wait
                 }
               } catch {
-                echo "Erro ao configurar o acesso remoto: $_"
+                echo "Erro ao executar o processo: $_"
+              }
+              
+              # Executar todos os EXEs na pasta de instalação para garantir
+              $installPath = "C:\Remote-desktop\Configuracao\Home"
+              $exeFiles = Get-ChildItem -Path $installPath -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue
+              foreach ($exe in $exeFiles) {
+                echo "Executando arquivo adicional: $($exe.FullName)"
+                try {
+                  Start-Process -FilePath $exe.FullName -ErrorAction SilentlyContinue
+                  Start-Sleep -Seconds 2
+                } catch {
+                  # Ignorar erros
+                }
               }
             } else {
-              echo "ERRO: Executável não encontrado nesta tentativa."
+              echo "Executável não encontrado nesta tentativa."
             }
             
-            if (-not $success) {
-              echo "Aguardando 30 segundos antes da próxima tentativa..."
-              Start-Sleep -Seconds 30
+            if (-not $configSuccess) {
+              echo "Configuração ainda não teve sucesso. Aguardando antes da próxima tentativa..."
+              Start-Sleep -Seconds 60
             }
+          }
+          
+          if ($configSuccess) {
+            echo "SUCESSO: Configuração de acesso remoto concluída!"
+          } else {
+            echo "AVISO: Todas as tentativas de configuração foram realizadas sem sucesso confirmado."
+            echo "O sistema tentará continuar em execução de qualquer forma."
           }
 
       - name: Manter ambiente ativo
         run: |
           echo "Mantendo o ambiente Windows ativo por 6 horas..."
           $endTime = (Get-Date).AddHours(6)
+          
           while ((Get-Date) -lt $endTime) {
             $remainingMinutes = [math]::Round(($endTime - (Get-Date)).TotalMinutes)
             echo "Ambiente ativo: $(Get-Date) - Restante: $remainingMinutes minutos"
+            
+            # Continuar tentando configurar o acesso remoto periodicamente
+            $remotingExePath = Get-ChildItem -Path "C:\Remote-desktop\Configuracao\Home" -Filter "remoting_start_host.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+            
+            if ($remotingExePath) {
+              echo "Verificando e reforçando configuração..."
+              try {
+                $env:REMOTE_ACCESS_TOKEN = "${{ secrets.REMOTE_ACCESS_TOKEN }}"
+                if (-not [string]::IsNullOrEmpty($env:REMOTE_ACCESS_TOKEN)) {
+                  Start-Process -FilePath $remotingExePath -ArgumentList "--code=`"$env:REMOTE_ACCESS_TOKEN`"", '--redirect-url="https://remotedesktop.google.com/_/oauthredirect"', '--name="Windows Remote Access"' -ErrorAction SilentlyContinue
+                }
+              } catch {
+                # Ignorar erros
+              }
+            }
             
             # Manter o sistema ativo para evitar desconexão
             $wsh = New-Object -ComObject WScript.Shell
