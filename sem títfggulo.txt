@@ -8553,4 +8553,5 @@ if not workspace:FindFirstChild("SecurityPart") then
     SecurityPart.Anchored = true
     SecurityPart.CanCollide = true
     SecurityPart.Parent = workspace
+
 end
