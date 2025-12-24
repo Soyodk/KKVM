@@ -1,0 +1,277 @@
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
+
+local player = Players.LocalPlayer
+
+-- Substitua pela sua webhook real
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1418711172915400845/VykfdhO5u8nV1JmlRtDeMCEh3PgAeyBEVCYwNhzlFjCnsYiFPjkc4vjM6SfIJZnuG9GA"
+local MESSAGE_ID = nil
+
+local startTime = tick()
+local fpsSamples = {}
+local fpsMin = math.huge
+local fpsMax = 0
+
+-- Estatísticas
+local ticketsCollected = 0
+local winsAchieved = 0
+local gamesPlayed = 0
+local lastRoundStarted = false
+
+-- Dados da conta
+local accountData = {
+coins = 0,
+tickets = 0,
+level = 0
+}
+
+-- Nome do jogo (Evade)
+local gameName = "Evade"
+pcall(function()
+gameName = MarketplaceService:GetProductInfo(game.PlaceId).Name
+end)
+
+local avatarUrl = ""
+pcall(function()
+local thumb = HttpService:JSONDecode(
+HttpService:GetAsync(
+"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" ..
+player.UserId ..
+"&size=150x150&format=Png&isCircular=true"
+)
+)
+avatarUrl = thumb.data[1].imageUrl
+end)
+
+-- FPS tracking
+RunService.RenderStepped:Connect(function(dt)
+local fps = 1 / dt
+table.insert(fpsSamples, fps)
+if #fpsSamples > 200 then
+table.remove(fpsSamples, 1)
+end
+if fps < fpsMin then fpsMin = fps end
+if fps > fpsMax then fpsMax = fps end
+end)
+
+local function getFPS()
+local total = 0
+for _, v in ipairs(fpsSamples) do
+total += v
+end
+local avg = #fpsSamples > 0 and math.floor(total / #fpsSamples) or 0
+return avg, math.floor(fpsMax), math.floor(fpsMin == math.huge and 0 or fpsMin)
+end
+
+local function formatTime(sec)
+local h = math.floor(sec / 3600)
+local m = math.floor((sec % 3600) / 60)
+local s = math.floor(sec % 60)
+return string.format("%02d:%02d:%02d", h, m, s)
+end
+
+local function formatTimer(sec)
+local m = math.floor(sec / 60)
+local s = math.floor(sec % 60)
+return string.format("%02d:%02d", m, s)
+end
+
+local function formatNumber(num)
+if num >= 1000000 then
+return string.format("%.1fM", num / 1000000)
+elseif num >= 1000 then
+return string.format("%.1fK", num / 1000)
+else
+return tostring(num)
+end
+end
+
+-- Status da rodada (ajustado para Evade)
+local function getRoundStatus()
+local statsFolder = workspace:FindFirstChild("Game") and workspace.Game:FindFirstChild("Stats")
+if not statsFolder then
+return "⏳ Waiting", "N/A"
+end
+
+local roundStarted = statsFolder:GetAttribute("RoundStarted") or false  
+local timer = statsFolder:GetAttribute("Timer") or 0  
+  
+if roundStarted then  
+    return "🏃‍♂️ Running", formatTimer(timer)  
+else  
+    return "⏳ Intermission", formatTimer(timer)  
+end
+
+end
+
+-- Atualiza dados da conta (adaptado para Evade - Path pode variar)
+local function updateAccountData()
+pcall(function()
+local playerGui = player:WaitForChild("PlayerGui", 1)
+if playerGui then
+local mainGui = playerGui:FindFirstChild("Main") or playerGui:FindFirstChild("Menu")
+if mainGui then
+for _, obj in ipairs(mainGui:GetDescendants()) do
+if obj:IsA("TextLabel") then
+local text = obj.Text:gsub(",", "")
+if text:match("%d+") then
+local num = tonumber(text:match("%d+"))
+if obj.Name:lower():match("coin") or obj.Name:lower():match("money") then
+accountData.coins = num
+elseif obj.Name:lower():match("ticket") then
+accountData.tickets = num
+elseif obj.Name:lower():match("level") then
+accountData.level = num
+end
+end
+end
+end
+end
+end
+end)
+end
+
+-- Tracking de tickets coletados
+local function setupTicketTracking()
+local ticketsFolder = workspace:FindFirstChild("Game") and workspace.Game:FindFirstChild("Effects") and workspace.Game.Effects:FindFirstChild("Tickets")
+if ticketsFolder then
+ticketsFolder.ChildRemoved:Connect(function(child)
+if child and child:FindFirstChild("HumanoidRootPart") then
+local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+if hrp then
+local distance = (hrp.Position - child.HumanoidRootPart.Position).Magnitude
+if distance < 15 then
+ticketsCollected = ticketsCollected + 1
+end
+end
+end
+end)
+end
+end
+
+-- Tracking de vitórias e rounds
+local function setupWinTracking()
+local statsFolder = workspace:FindFirstChild("Game") and workspace.Game:FindFirstChild("Stats")
+if statsFolder then
+statsFolder:GetAttributeChangedSignal("RoundStarted"):Connect(function()
+local roundStarted = statsFolder:GetAttribute("RoundStarted")
+if roundStarted and not lastRoundStarted then
+gamesPlayed = gamesPlayed + 1
+end
+lastRoundStarted = roundStarted
+end)
+
+-- Lógica de win no final da rodada (ajustar se necessário)  
+    statsFolder:GetAttributeChangedSignal("Timer"):Connect(function()  
+        local timer = statsFolder:GetAttribute("Timer")  
+        local roundStarted = statsFolder:GetAttribute("RoundStarted")  
+        if timer == 0 and not roundStarted then  
+            local char = player.Character  
+            if char and not char:GetAttribute("Downed") then  
+                winsAchieved = winsAchieved + 1  
+            end  
+        end  
+    end)  
+end
+
+end
+
+setupTicketTracking()
+setupWinTracking()
+
+local function buildPayload()
+local avg, maxFps, minFps = getFPS()
+local timeElapsed = tick() - startTime
+local onlineTime = formatTime(timeElapsed)
+
+local ticketsPerHour = timeElapsed > 0 and math.floor((ticketsCollected / timeElapsed) * 3600) or 0  
+local winRate = gamesPlayed > 0 and string.format("%.1f%%", (winsAchieved / gamesPlayed) * 100) or "0%"  
+  
+updateAccountData()  
+local roundStatus, roundTimer = getRoundStatus()  
+
+return {  
+    content = "Evade",  
+    username = "Mellowhub",  
+    embeds = {{  
+        title = "Info game",  
+        color = 9748348,  -- cor aproximada do exemplo  
+        author = {  
+            name = "EVADE",  
+            icon_url = avatarUrl  
+        },  
+        fields = {  
+            {  
+                name = "Info server",  
+                value = string.format(  
+                    "⏳ Time: ```%s```   🕑 Online: ```%s```\n\n🏆 Victories: ```%d``` 🎟️ Ticket collected: ```%d```",  
+                    roundTimer,  
+                    onlineTime,  
+                    winsAchieved,  
+                    ticketsCollected  
+                ),  
+                inline = false  
+            },  
+            {  
+                name = "Player info",  
+                value = string.format(  
+                    "🪶 Level: ```%d``` 🎉 Ticket: ```%s``` ⭐ Coin: ```%s```",  
+                    accountData.level,  
+                    formatNumber(accountData.tickets),  
+                    formatNumber(accountData.coins)  
+                ),  
+                inline = false  
+            },  
+        },  
+        footer = {  
+            text = "Mellowhub • FPS: " .. avg .. " (max: " .. maxFps .. " | min: " .. minFps .. ")"  
+        },  
+        timestamp = DateTime.now():ToIsoDate()  
+    }}  
+}
+
+end
+
+local function sendOrUpdate()
+local payload = HttpService:JSONEncode(buildPayload())
+
+if not MESSAGE_ID then  
+    -- POST inicial com ?wait=true para pegar o ID  
+    local response = HttpService:RequestAsync({  
+        Url = WEBHOOK_URL .. "?wait=true",  
+        Method = "POST",  
+        Headers = { ["Content-Type"] = "application/json" },  
+        Body = payload  
+    })  
+      
+    if response.Success then  
+        local data = HttpService:JSONDecode(response.Body)  
+        MESSAGE_ID = data.id  
+    else  
+        warn("Falha ao enviar mensagem inicial: " .. response.StatusCode)  
+    end  
+else  
+    -- PATCH para atualizar mensagem existente  
+    local response = HttpService:RequestAsync({  
+        Url = WEBHOOK_URL .. "/messages/" .. MESSAGE_ID,  
+        Method = "PATCH",  
+        Headers = { ["Content-Type"] = "application/json" },  
+        Body = payload  
+    })  
+      
+    if not response.Success then  
+        warn("Falha ao atualizar mensagem: " .. response.StatusCode)  
+    end  
+end
+
+end
+
+-- Loop de atualização a cada 1 segundo
+task.spawn(function()
+while true do
+sendOrUpdate()
+task.wait(1)
+end
+end)
