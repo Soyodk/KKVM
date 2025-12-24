@@ -6,7 +6,7 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local player = Players.LocalPlayer
 
 -- Substitua pela sua webhook real
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1418711172915400845/VykfdhO5u8nV1JmlRtDeMCEh3PgAeyBEVCYwNhzlFjCnsYiFPjkc4vjM6SfIJZnuG9GA"
+local WEBHOOK_URL = "https://discord.com/api/webhoo"
 local MESSAGE_ID = nil
 
 local startTime = tick()
@@ -274,4 +274,5 @@ while true do
 sendOrUpdate()
 task.wait(1)
 end
+
 end)
