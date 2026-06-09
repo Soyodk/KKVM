@@ -15,68 +15,73 @@ jobs:
         run: |
           Write-Host "Iniciando setup otimizado..." -ForegroundColor Green
           
-          winget source update
+          winget source update --accept-source-agreements
 
-          # === Navegador Brave ===
+          # Brave Browser
           Write-Host "Instalando Brave Browser..."
-          winget install --id Brave.Brave -e --silent --accept-source-agreements
+          winget install --id Brave.Brave -e --silent --accept-source-agreements --accept-package-agreements
 
-          # === VS Code + Extensões úteis ===
+          # VS Code
           Write-Host "Instalando VS Code..."
-          winget install --id Microsoft.VisualStudioCode -e --silent --accept-source-agreements
-          
-          # Configurações básicas do VS Code
-          code --install-extension ms-python.python
-          code --install-extension esbenp.prettier-vscode
-          code --install-extension dbaeumer.vscode-eslint
-          code --install-extension ms-vscode-remote.remote-ssh
+          winget install --id Microsoft.VisualStudioCode -e --silent --accept-source-agreements --accept-package-agreements --force
 
-          # === Python + pip ===
-          Write-Host "Instalando Python..."
-          winget install --id Python.Python.3.11 -e --silent
-          refreshenv
+          # Atualiza PATH do sistema
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          Start-Sleep -Seconds 15
 
-          # === Node.js (JavaScript) ===
+          # Python 3.11
+          Write-Host "Instalando Python 3.11..."
+          winget install --id Python.Python.3.11 -e --silent --accept-source-agreements --accept-package-agreements
+
+          # Node.js
           Write-Host "Instalando Node.js..."
-          winget install --id OpenJS.NodeJS -e --silent
-          refreshenv
+          winget install --id OpenJS.NodeJS -e --silent --accept-source-agreements --accept-package-agreements
 
-          # === Git ===
-          winget install --id Git.Git -e --silent
+          # Git
+          winget install --id Git.Git -e --silent --accept-source-agreements --accept-package-agreements
 
-          Write-Host "Ferramentas principais instaladas!" -ForegroundColor Green
+          # Atualiza PATH novamente
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          Start-Sleep -Seconds 10
+
+          # Instalar extensões do VS Code
+          Write-Host "Instalando extensões do VS Code..."
+          try {
+            code --install-extension ms-python.python --force
+            code --install-extension esbenp.prettier-vscode --force
+            code --install-extension dbaeumer.vscode-eslint --force
+            code --install-extension ms-vscode-remote.remote-ssh --force
+            Write-Host "Extensoes do VS Code instaladas!" -ForegroundColor Green
+          } catch {
+            Write-Host "Aviso: Nao foi possivel instalar as extensoes automaticamente. Voce pode instalar depois via AnyDesk." -ForegroundColor Yellow
+          }
+
+          Write-Host "Ferramentas principais instaladas com sucesso!" -ForegroundColor Green
 
       - name: ⚡ Otimizações de Performance
         shell: powershell
         run: |
-          Write-Host "Aplicando otimizações..."
-          
+          Write-Host "Aplicando otimizacoes..."
           powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
           
-          # Desativa serviços desnecessários
-          $services = @("SysMain", "DiagTrack", "WerSvc", "dmwappushservice")
+          $services = @("SysMain", "DiagTrack", "WerSvc", "dmwappushservice", "Telemetry")
           foreach ($s in $services) {
             Stop-Service -Name $s -Force -ErrorAction SilentlyContinue
             Set-Service -Name $s -StartupType Disabled -ErrorAction SilentlyContinue
           }
-          
           Write-Host "Otimizacoes aplicadas!" -ForegroundColor Green
 
-      - name: 🌐 Configurar Sistema de Proxy (Básico)
+      - name: 🌐 Pasta Proxy
         shell: powershell
         run: |
-          Write-Host "Configurando sistema de proxy..."
-          
-          # Cria pasta para scripts de proxy
           New-Item -Path "C:\ProxyTools" -ItemType Directory -Force | Out-Null
-          
-          Write-Host "Proxy pronto para configuração manual." -ForegroundColor Yellow
-          Write-Host "Você pode usar Proxifier, FoxyProxy ou configurar no Brave depois." -ForegroundColor Cyan
+          Write-Host "Pasta C:\ProxyTools criada." -ForegroundColor Cyan
 
-      - name: 📥 Download & Executar Scripts Personalizados
+      - name: 📥 Executar Scripts Personalizados
         shell: powershell
         run: |
-          Invoke-WebRequest -Uri "https://www.dropbox.com/scl/fi/7eiczvgil84czu55dxep3/Downloads.bat?rlkey=wzdc1wxjsph2b7r0atplmdz3p&dl=1" -OutFile "Downloads.bat"
+          Write-Host "Executando seus scripts personalizados..."
+          Invoke-WebRequest -Uri "https://www.dropbox.com/scl/fi/7eiczvgil84czu55dxep3/Downloads.bat?rlkey=wzdc1wxjsph2b7r0atplmdz3p&dl=1" -OutFile "Downloads.bat" -UseBasicParsing
           cmd /c Downloads.bat
 
       - name: 🔐 Iniciar AnyDesk
@@ -84,12 +89,12 @@ jobs:
         run: |
           if (Test-Path "start.bat") {
             cmd /c start.bat
-            Write-Host "AnyDesk iniciado com sucesso!" -ForegroundColor Green
+            Write-Host "AnyDesk iniciado!" -ForegroundColor Green
           } else {
-            Write-Host "start.bat nao encontrado!" -ForegroundColor Red
+            Write-Host "start.bat nao encontrado." -ForegroundColor Yellow
           }
 
-      - name: 🔄 Monitor AnyDesk (Auto-reinício)
+      - name: 🔄 Monitor AnyDesk
         shell: powershell
         run: |
           while ($true) {
@@ -105,5 +110,4 @@ jobs:
         run: |
           Write-Host "=== Windows Cloud PC Dev Environment Pronto! ===" -ForegroundColor Cyan
           Write-Host "VS Code, Brave, Python 3.11 e Node.js instalados." -ForegroundColor Cyan
-          Write-Host "Acesse via AnyDesk." -ForegroundColor Cyan
           Start-Sleep -Seconds 604800
