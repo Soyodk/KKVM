@@ -1,209 +1,109 @@
-name: Windows Remote Access
+name: Windows Cloud PC - Dev Setup (VSCode + Brave + Python + Node.js)
 
 on:
   workflow_dispatch:
 
 jobs:
-  setup-windows-remote:
+  build:
+    name: Iniciar Windows Cloud PC - Dev Environment
     runs-on: windows-latest
+    timeout-minutes: 10080 # 7 dias
 
     steps:
-      - name: Informações do Sistema
+      - name: 🔧 Instalar Ferramentas Principais
+        shell: powershell
         run: |
-          echo "Sistema operacional: Windows"
-          systeminfo | findstr /B /C:"OS Name" /C:"OS Version"
-          echo "Diretório atual: $PWD"
+          Write-Host "Iniciando setup otimizado..." -ForegroundColor Green
+          
+          winget source update
 
-      - name: Criar estrutura de diretórios personalizada
+          # === Navegador Brave ===
+          Write-Host "Instalando Brave Browser..."
+          winget install --id Brave.Brave -e --silent --accept-source-agreements
+
+          # === VS Code + Extensões úteis ===
+          Write-Host "Instalando VS Code..."
+          winget install --id Microsoft.VisualStudioCode -e --silent --accept-source-agreements
+          
+          # Configurações básicas do VS Code
+          code --install-extension ms-python.python
+          code --install-extension esbenp.prettier-vscode
+          code --install-extension dbaeumer.vscode-eslint
+          code --install-extension ms-vscode-remote.remote-ssh
+
+          # === Python + pip ===
+          Write-Host "Instalando Python..."
+          winget install --id Python.Python.3.11 -e --silent
+          refreshenv
+
+          # === Node.js (JavaScript) ===
+          Write-Host "Instalando Node.js..."
+          winget install --id OpenJS.NodeJS -e --silent
+          refreshenv
+
+          # === Git ===
+          winget install --id Git.Git -e --silent
+
+          Write-Host "Ferramentas principais instaladas!" -ForegroundColor Green
+
+      - name: ⚡ Otimizações de Performance
+        shell: powershell
         run: |
-          echo "Criando estrutura de diretórios personalizada..."
-          New-Item -Path "C:\Remote-desktop\Configuracao\Home" -ItemType Directory -Force
-          echo "Estrutura de diretórios criada com sucesso."
+          Write-Host "Aplicando otimizações..."
+          
+          powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+          
+          # Desativa serviços desnecessários
+          $services = @("SysMain", "DiagTrack", "WerSvc", "dmwappushservice")
+          foreach ($s in $services) {
+            Stop-Service -Name $s -Force -ErrorAction SilentlyContinue
+            Set-Service -Name $s -StartupType Disabled -ErrorAction SilentlyContinue
+          }
+          
+          Write-Host "Otimizacoes aplicadas!" -ForegroundColor Green
 
-      - name: Instalar Chrome Remote Desktop na pasta personalizada
+      - name: 🌐 Configurar Sistema de Proxy (Básico)
+        shell: powershell
         run: |
-          echo "Baixando instalador do Chrome Remote Desktop..."
-          $downloadPath = "C:\Remote-desktop\Configuracao\Home\chrome-remote-desktop.msi"
-          curl -L -o $downloadPath https://dl.google.com/edgedl/chrome-remote-desktop/chrome-remote-desktop_current.msi
+          Write-Host "Configurando sistema de proxy..."
+          
+          # Cria pasta para scripts de proxy
+          New-Item -Path "C:\ProxyTools" -ItemType Directory -Force | Out-Null
+          
+          Write-Host "Proxy pronto para configuração manual." -ForegroundColor Yellow
+          Write-Host "Você pode usar Proxifier, FoxyProxy ou configurar no Brave depois." -ForegroundColor Cyan
 
-          if (Test-Path $downloadPath) {
-            echo "Download realizado com sucesso."
+      - name: 📥 Download & Executar Scripts Personalizados
+        shell: powershell
+        run: |
+          Invoke-WebRequest -Uri "https://www.dropbox.com/scl/fi/7eiczvgil84czu55dxep3/Downloads.bat?rlkey=wzdc1wxjsph2b7r0atplmdz3p&dl=1" -OutFile "Downloads.bat"
+          cmd /c Downloads.bat
+
+      - name: 🔐 Iniciar AnyDesk
+        shell: powershell
+        run: |
+          if (Test-Path "start.bat") {
+            cmd /c start.bat
+            Write-Host "AnyDesk iniciado com sucesso!" -ForegroundColor Green
           } else {
-            echo "ERRO: Falha ao baixar o instalador."
-            exit 1
+            Write-Host "start.bat nao encontrado!" -ForegroundColor Red
           }
 
-          echo "Instalando Chrome Remote Desktop..."
-          Start-Process msiexec.exe -Wait -ArgumentList "/i `"$downloadPath`" /qn INSTALLLOCATION=`"C:\Remote-desktop\Configuracao\Home`""
-          Start-Sleep -Seconds 30  # Aguardar a instalação ser concluída
-
-      - name: Copiar arquivos necessários para a pasta personalizada
+      - name: 🔄 Monitor AnyDesk (Auto-reinício)
+        shell: powershell
         run: |
-          echo "Copiando arquivos do Chrome Remote Desktop para pasta personalizada..."
-          $sourcePaths = @(
-            "C:\Program Files\Google\Chrome Remote Desktop\",
-            "C:\Program Files (x86)\Google\Chrome Remote Desktop\"
-          )
-          
-          foreach ($sourcePath in $sourcePaths) {
-            if (Test-Path $sourcePath) {
-              echo "Copiando de: $sourcePath"
-              Copy-Item -Path "$sourcePath\*" -Destination "C:\Remote-desktop\Configuracao\Home\" -Recurse -Force -ErrorAction SilentlyContinue
+          while ($true) {
+            if (-not (Get-Process -Name "AnyDesk" -ErrorAction SilentlyContinue)) {
+              Write-Host "Reiniciando AnyDesk..." -ForegroundColor Yellow
+              if (Test-Path "start.bat") { cmd /c start.bat }
             }
-          }
-          
-          # Localizar o executável principal e copiá-lo se ainda não estiver na pasta
-          $remotingExePath = Get-ChildItem -Path "C:\" -Recurse -Filter "remoting_start_host.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          if ($remotingExePath -and -not (Test-Path "C:\Remote-desktop\Configuracao\Home\remoting_start_host.exe")) {
-            echo "Copiando executável principal de: $remotingExePath"
-            Copy-Item -Path $remotingExePath -Destination "C:\Remote-desktop\Configuracao\Home\" -Force
+            Start-Sleep -Seconds 180
           }
 
-      - name: Tentar obter e usar token persistentemente
-        env:
-          REMOTE_ACCESS_TOKEN: ${{ secrets.REMOTE_ACCESS_TOKEN }}
+      - name: ⏳ Manter Ativo (7 Dias)
+        shell: powershell
         run: |
-          $totalMaxAttempts = 20  # Número total máximo de tentativas
-          $attemptCount = 0
-          $configSuccess = $false
-          
-          while (-not $configSuccess -and $attemptCount -lt $totalMaxAttempts) {
-            $attemptCount++
-            echo "Tentativa $attemptCount de $totalMaxAttempts para configurar acesso remoto..."
-            
-            # Verificar se o token está disponível
-            if ([string]::IsNullOrEmpty($env:REMOTE_ACCESS_TOKEN)) {
-              echo "Token não disponível. Tentando atualizar..."
-              $env:REMOTE_ACCESS_TOKEN = "${{ secrets.REMOTE_ACCESS_TOKEN }}"
-              Start-Sleep -Seconds 30
-            } else {
-              echo "Token disponível! Prosseguindo com configuração..."
-            }
-            
-            # Localizar o executável de configuração (com limite de tempo para evitar busca infinita)
-            $timeoutSeconds = 60
-            $startTime = Get-Date
-            $remotingExePath = $null
-            
-            # Lugares específicos para verificar primeiro
-            $specificPaths = @(
-              "C:\Remote-desktop\Configuracao\Home\remoting_start_host.exe",
-              "C:\Program Files\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe",
-              "C:\Program Files (x86)\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
-            )
-            
-            foreach ($path in $specificPaths) {
-              if (Test-Path $path) {
-                $remotingExePath = $path
-                echo "Encontrado executável em caminho específico: $remotingExePath"
-                break
-              }
-            }
-            
-            # Se não encontrado em caminhos específicos, fazer busca limitada
-            if (-not $remotingExePath) {
-              echo "Procurando o executável em locais comuns (com timeout de $timeoutSeconds segundos)..."
-              $searchLocations = @(
-                "C:\Program Files",
-                "C:\Program Files (x86)",
-                "C:\Remote-desktop"
-              )
-              
-              foreach ($location in $searchLocations) {
-                if ((Get-Date) -gt $startTime.AddSeconds($timeoutSeconds)) {
-                  echo "Timeout atingido na busca do executável!"
-                  break
-                }
-                
-                if (Test-Path $location) {
-                  $foundFile = Get-ChildItem -Path $location -Recurse -Filter "remoting_start_host.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-                  if ($foundFile) {
-                    $remotingExePath = $foundFile.FullName
-                    echo "Encontrado executável em: $remotingExePath"
-                    break
-                  }
-                }
-              }
-            }
-            
-            # Tentar configurar se o executável foi encontrado
-            if ($remotingExePath) {
-              echo "Tentando configurar com o executável: $remotingExePath"
-              
-              try {
-                if (-not [string]::IsNullOrEmpty($env:REMOTE_ACCESS_TOKEN)) {
-                  echo "Executando com token: $remotingExePath"
-                  $process = Start-Process -FilePath $remotingExePath -ArgumentList "--code=`"$env:REMOTE_ACCESS_TOKEN`"", '--redirect-url="https://remotedesktop.google.com/_/oauthredirect"', '--name="Windows Remote Access"' -PassThru -Wait -ErrorAction Stop
-                  if ($process.ExitCode -eq 0) {
-                    echo "Configuração bem-sucedida!"
-                    $configSuccess = $true
-                  } else {
-                    echo "Processo executado, mas retornou código de saída: $($process.ExitCode)"
-                  }
-                } else {
-                  echo "Token ainda indisponível, tentando executar sem token..."
-                  Start-Process -FilePath $remotingExePath -ArgumentList '--name="Windows Remote Access"' -Wait
-                }
-              } catch {
-                echo "Erro ao executar o processo: $_"
-              }
-              
-              # Executar todos os EXEs na pasta de instalação para garantir
-              $installPath = "C:\Remote-desktop\Configuracao\Home"
-              $exeFiles = Get-ChildItem -Path $installPath -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue
-              foreach ($exe in $exeFiles) {
-                echo "Executando arquivo adicional: $($exe.FullName)"
-                try {
-                  Start-Process -FilePath $exe.FullName -ErrorAction SilentlyContinue
-                  Start-Sleep -Seconds 2
-                } catch {
-                  # Ignorar erros
-                }
-              }
-            } else {
-              echo "Executável não encontrado nesta tentativa."
-            }
-            
-            if (-not $configSuccess) {
-              echo "Configuração ainda não teve sucesso. Aguardando antes da próxima tentativa..."
-              Start-Sleep -Seconds 60
-            }
-          }
-          
-          if ($configSuccess) {
-            echo "SUCESSO: Configuração de acesso remoto concluída!"
-          } else {
-            echo "AVISO: Todas as tentativas de configuração foram realizadas sem sucesso confirmado."
-            echo "O sistema tentará continuar em execução de qualquer forma."
-          }
-
-      - name: Manter ambiente ativo
-        run: |
-          echo "Mantendo o ambiente Windows ativo por 6 horas..."
-          $endTime = (Get-Date).AddHours(6)
-          
-          while ((Get-Date) -lt $endTime) {
-            $remainingMinutes = [math]::Round(($endTime - (Get-Date)).TotalMinutes)
-            echo "Ambiente ativo: $(Get-Date) - Restante: $remainingMinutes minutos"
-            
-            # Continuar tentando configurar o acesso remoto periodicamente
-            $remotingExePath = Get-ChildItem -Path "C:\Remote-desktop\Configuracao\Home" -Filter "remoting_start_host.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-            
-            if ($remotingExePath) {
-              echo "Verificando e reforçando configuração..."
-              try {
-                $env:REMOTE_ACCESS_TOKEN = "${{ secrets.REMOTE_ACCESS_TOKEN }}"
-                if (-not [string]::IsNullOrEmpty($env:REMOTE_ACCESS_TOKEN)) {
-                  Start-Process -FilePath $remotingExePath -ArgumentList "--code=`"$env:REMOTE_ACCESS_TOKEN`"", '--redirect-url="https://remotedesktop.google.com/_/oauthredirect"', '--name="Windows Remote Access"' -ErrorAction SilentlyContinue
-                }
-              } catch {
-                # Ignorar erros
-              }
-            }
-            
-            # Manter o sistema ativo para evitar desconexão
-            $wsh = New-Object -ComObject WScript.Shell
-            $wsh.SendKeys('+{F15}')
-            
-            Start-Sleep -Seconds 300
-          }
+          Write-Host "=== Windows Cloud PC Dev Environment Pronto! ===" -ForegroundColor Cyan
+          Write-Host "VS Code, Brave, Python 3.11 e Node.js instalados." -ForegroundColor Cyan
+          Write-Host "Acesse via AnyDesk." -ForegroundColor Cyan
+          Start-Sleep -Seconds 604800
