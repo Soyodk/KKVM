@@ -1,0 +1,21 @@
+<meta>
+    <info author="KKVM" name="Owner perks" type="script" />
+    <script src="server.lua" type="server" />
+    <script src="client.lua" type="client" cache="false" />
+    <file src="assets/models/411.dff" />
+    <file src="assets/models/411.txd" />
+    <file src="assets/models/541.dff" />
+    <file src="assets/models/541.txd" />
+    <file src="assets/models/415.dff" />
+    <file src="assets/models/415.txd" />
+    <file src="assets/models/585.dff" />
+    <file src="assets/models/585.txd" />
+    <file src="assets/models/522.dff" />
+    <file src="assets/models/522.txd" />
+    <file src="assets/models/461.dff" />
+    <file src="assets/models/461.txd" />
+    <file src="assets/models/521.dff" />
+    <file src="assets/models/521.txd" />
+    <file src="assets/models/468.dff" />
+    <file src="assets/models/468.txd" />
+</meta>
